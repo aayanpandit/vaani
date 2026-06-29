@@ -5,6 +5,7 @@ from app.ai.agent import VaaniAgent
 from app.database.dependencies import get_db
 from app.schemas.appointment import AppointmentCreate
 from app.services.appointment_service import create_appointment
+from app.schemas.chat import ChatRequest
 
 router = APIRouter()
 
@@ -25,5 +26,5 @@ def create_new_appointment(
 
 
 @router.post("/chat")
-def chat(message: dict):
-    return agent.process(message["message"])
+def chat(request: ChatRequest):
+    return agent.process(request.message)
