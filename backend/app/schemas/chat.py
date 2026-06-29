@@ -9,3 +9,4 @@ class ChatResponse(BaseModel):
     message: str
     intent: str
     tool: str | None = None
+    entities: dict = {}
