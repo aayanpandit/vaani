@@ -1,34 +1,15 @@
-import re
+from app.ai.intent_detector import detect_intent
+from app.ai.entity_extractor import extract_entities
+from app.ai.tool_selector import select_tool
 
 
 class VaaniAgent:
 
     def process(self, message: str):
 
-        text = message.lower()
-
-        intent = "unknown"
-        tool = None
-        entities = {}
-
-        if any(word in text for word in [
-            "appointment",
-            "book",
-            "schedule",
-            "meeting",
-        ]):
-            intent = "book_appointment"
-            tool = "appointment_service"
-
-        if "tomorrow" in text:
-            entities["date"] = "tomorrow"
-        elif "today" in text:
-            entities["date"] = "today"
-
-        time_match = re.search(r"\b\d{1,2}\s?(am|pm)\b", text)
-
-        if time_match:
-            entities["time"] = time_match.group().upper()
+        intent = detect_intent(message)
+        entities = extract_entities(message)
+        tool = select_tool(intent)
 
         return {
             "message": message,
