@@ -1,12 +1,18 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="Vaani API", version="0.1.0")
+from app.config.settings import settings
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
+)
 
 
 @app.get("/health")
 def health():
     return {
         "status": "healthy",
-        "service": "Vaani",
-        "version": "0.1.0",
+        "service": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "environment": settings.ENVIRONMENT,
     }
