@@ -1,0 +1,92 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+wheels/
+share/python-wheels/
+
+# ---------- Virtual environments ----------
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ---------- uv ----------
+.uv/
+uv.lock.bak
+
+# ---------- Testing & coverage ----------
+.pytest_cache/
+.cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# ---------- Type checking / linting ----------
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+
+# ---------- IDE / editor ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ---------- Jupyter ----------
+.ipynb_checkpoints/
+
+# ---------- Environment & secrets (CRITICAL) ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+secrets.*
+.secrets/
+credentials.json
+service-account*.json
+*_token.json
+.aws/
+.gcp/
+.azure/
+
+# ---------- Logs / runtime artifacts ----------
+*.log
+logs/
+*.pid
+*.sqlite3
+*.db
+
+# ---------- Model / data artifacts (avoid bloating repo) ----------
+*.ckpt
+*.pt
+*.onnx
+*.h5
+data/raw/
+data/processed/
+models/checkpoints/
+
+# ---------- Build / packaging ----------
+*.tar.gz
+*.whl
+
+# ---------- Misc ----------
+.DS_Store
+Thumbs.db
