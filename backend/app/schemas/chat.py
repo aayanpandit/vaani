@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class ChatRequest(BaseModel):
     message: str
+    session_id: str = "default"
     customer_name: str | None = None
     phone_number: str | None = None
 
