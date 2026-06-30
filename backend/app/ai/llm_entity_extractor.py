@@ -16,8 +16,9 @@ No markdown.
 
 Required JSON format:
 {{
-  "date": "",
-  "time": ""
+    "date": "",
+    "time": "",
+    "appointment_id": ""
 }}
 
 User message:

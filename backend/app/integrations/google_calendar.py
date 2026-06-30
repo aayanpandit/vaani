@@ -1,5 +1,7 @@
 import os
+import dateparser
 from datetime import datetime, timedelta
+
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -47,7 +49,13 @@ def create_calendar_event(
 ):
     service = get_calendar_service()
 
-    start = datetime.fromisoformat(start_datetime)
+    start = dateparser.parse(
+    start_datetime,
+    settings={
+        "TIMEZONE": "Asia/Kolkata",
+        "RETURN_AS_TIMEZONE_AWARE": False,
+    },
+)
     end = start + timedelta(minutes=duration_minutes)
 
     event = {

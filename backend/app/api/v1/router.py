@@ -190,7 +190,7 @@ def chat(
 
         calendar_event = create_calendar_event(
     summary=f"Appointment with {created_appointment.customer_name}",
-    start_datetime="2026-07-01T17:00:00",
+     start_datetime=f"{session['date']} {session['time']}",
                                           )
 
         clear_session(request.session_id)
