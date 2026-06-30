@@ -7,5 +7,8 @@ def select_tool(intent: str) -> str | None:
     
     if intent == "reschedule_appointment":
         return "reschedule_appointment_service"
+    
+    if intent == "get_appointment":
+        return "get_appointment_service"
 
     return None

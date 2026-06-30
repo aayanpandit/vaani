@@ -10,6 +10,7 @@ Classify the user's intent into exactly one of these labels:
 book_appointment
 - cancel_appointment
 - reschedule_appointment
+- get_appointment
 - unknown
 
 User message:
@@ -24,9 +25,10 @@ Return only the label. Do not explain.
     "book_appointment",
     "cancel_appointment",
     "reschedule_appointment",
+    "get_appointment",
     "unknown",
 ]:
       return "unknown"
     
-    
+
     return intent

@@ -5,11 +5,14 @@ from sqlalchemy.orm import Session
 from app.ai.agent import VaaniAgent
 from app.database.dependencies import get_db
 from app.schemas.appointment import AppointmentCreate
+
 from app.services.appointment_service import (
     create_appointment,
     cancel_appointment,
     reschedule_appointment,
+    get_appointment,
 )
+
 from app.schemas.chat import ChatRequest
 
 router = APIRouter()
@@ -36,19 +39,16 @@ def chat(
     db: Session = Depends(get_db),
 ):
     agent_response = agent.process(request.message)
-
     session = get_session(request.session_id)
 
     update_data = {
         "intent": agent_response["intent"]
         if agent_response["intent"] != "unknown"
         else session.get("intent"),
-
         "date": agent_response["entities"].get("date") or session.get("date"),
         "time": agent_response["entities"].get("time") or session.get("time"),
         "appointment_id": agent_response["entities"].get("appointment_id")
         or session.get("appointment_id"),
-
         "customer_name": request.customer_name or session.get("customer_name"),
         "phone_number": request.phone_number or session.get("phone_number"),
     }
@@ -69,10 +69,7 @@ def chat(
         cancelled_appointment = cancel_appointment(db, int(appointment_id))
 
         if not cancelled_appointment:
-            return {
-                "status": "error",
-                "message": "Appointment not found.",
-            }
+            return {"status": "error", "message": "Appointment not found."}
 
         clear_session(request.session_id)
 
@@ -87,67 +84,90 @@ def chat(
                 "status": cancelled_appointment.status,
             },
         }
+
     if session.get("intent") == "reschedule_appointment":
-       appointment_id = session.get("appointment_id")
-       date = session.get("date")
-       time = session.get("time")
+        appointment_id = session.get("appointment_id")
+        date = session.get("date")
+        time = session.get("time")
 
-    missing_fields = []
+        missing_fields = []
 
-    if not appointment_id:
-        missing_fields.append("appointment_id")
+        if not appointment_id:
+            missing_fields.append("appointment_id")
+        if not date:
+            missing_fields.append("date")
+        if not time:
+            missing_fields.append("time")
 
-    if not date:
-        missing_fields.append("date")
+        if missing_fields:
+            return {
+                "status": "needs_information",
+                "missing_fields": missing_fields,
+                "message": f"Please provide: {', '.join(missing_fields)}",
+                "session": session,
+            }
 
-    if not time:
-        missing_fields.append("time")
+        updated_appointment = reschedule_appointment(
+            db,
+            int(appointment_id),
+            f"{date} {time}",
+        )
 
-    if missing_fields:
+        if not updated_appointment:
+            return {"status": "error", "message": "Appointment not found."}
+
+        clear_session(request.session_id)
+
         return {
-            "status": "needs_information",
-            "missing_fields": missing_fields,
-            "message": f"Please provide: {', '.join(missing_fields)}",
-            "session": session,
+            "status": "success",
+            "message": "Appointment rescheduled successfully",
+            "appointment_id": updated_appointment.id,
+            "appointment": {
+                "customer_name": updated_appointment.customer_name,
+                "phone_number": updated_appointment.phone_number,
+                "appointment_time": updated_appointment.appointment_time,
+                "status": updated_appointment.status,
+            },
         }
 
-    updated_appointment = reschedule_appointment(
-        db,
-        int(appointment_id),
-        f"{date} {time}",
-    )
+    if session.get("intent") == "get_appointment":
+        appointment_id = session.get("appointment_id")
 
-    if not updated_appointment:
+        if not appointment_id:
+            return {
+                "status": "needs_information",
+                "missing_fields": ["appointment_id"],
+                "message": "Please provide the appointment ID.",
+                "session": session,
+            }
+
+        appointment = get_appointment(db, int(appointment_id))
+
+        if not appointment:
+            return {"status": "error", "message": "Appointment not found."}
+
+        clear_session(request.session_id)
+
         return {
-            "status": "error",
-            "message": "Appointment not found.",
+            "status": "success",
+            "appointment": {
+                "id": appointment.id,
+                "customer_name": appointment.customer_name,
+                "phone_number": appointment.phone_number,
+                "appointment_time": appointment.appointment_time,
+                "status": appointment.status,
+            },
         }
 
-    clear_session(request.session_id)
-
-    return {
-        "status": "success",
-        "message": "Appointment rescheduled successfully",
-        "appointment_id": updated_appointment.id,
-        "appointment": {
-            "customer_name": updated_appointment.customer_name,
-            "phone_number": updated_appointment.phone_number,
-            "appointment_time": updated_appointment.appointment_time,
-            "status": updated_appointment.status,
-        },
-    }
     if session.get("intent") == "book_appointment":
         missing_fields = []
 
         if not session["date"]:
             missing_fields.append("date")
-
         if not session["time"]:
             missing_fields.append("time")
-
         if not session["customer_name"]:
             missing_fields.append("customer_name")
-
         if not session["phone_number"]:
             missing_fields.append("phone_number")
 
