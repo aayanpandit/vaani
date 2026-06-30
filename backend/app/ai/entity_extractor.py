@@ -15,4 +15,9 @@ def extract_entities(text: str) -> dict:
     if time_match:
         entities["time"] = time_match.group().upper()
 
+    id_match = re.search(r"\b\d+\b", text)
+
+    if id_match:
+        entities["appointment_id"] = id_match.group()
+
     return entities
