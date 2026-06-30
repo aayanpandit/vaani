@@ -7,8 +7,9 @@ You are an intent classification system for an AI receptionist.
 
 Classify the user's intent into exactly one of these labels:
 
-- book_appointment
+book_appointment
 - cancel_appointment
+- reschedule_appointment
 - unknown
 
 User message:
@@ -19,7 +20,13 @@ Return only the label. Do not explain.
 
     intent = ask_groq(prompt).strip().lower()
 
-    if intent not in ["book_appointment", "cancel_appointment", "unknown"]:
-     return "unknown"
-
+    if intent not in [
+    "book_appointment",
+    "cancel_appointment",
+    "reschedule_appointment",
+    "unknown",
+]:
+      return "unknown"
+    
+    
     return intent

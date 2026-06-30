@@ -17,5 +17,14 @@ def detect_intent(text: str) -> str:
         "call",
     ]):
         return "book_appointment"
+    
+    if any(word in text for word in [
+       "reschedule",
+       "change",
+       "move",
+       "postpone",
+       "shift",
+]):
+       return "reschedule_appointment"
 
     return "unknown"

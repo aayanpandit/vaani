@@ -28,3 +28,17 @@ def cancel_appointment(db, appointment_id: int):
     db.refresh(appointment)
 
     return appointment
+
+def reschedule_appointment(db, appointment_id: int, new_appointment_time: str):
+    appointment = get_appointment(db, appointment_id)
+
+    if not appointment:
+        return None
+
+    appointment.appointment_time = new_appointment_time
+    appointment.status = "rescheduled"
+
+    db.commit()
+    db.refresh(appointment)
+
+    return appointment

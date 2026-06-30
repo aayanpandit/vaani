@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 from app.ai.agent import VaaniAgent
 from app.database.dependencies import get_db
 from app.schemas.appointment import AppointmentCreate
-from app.services.appointment_service import create_appointment, cancel_appointment
+from app.services.appointment_service import (
+    create_appointment,
+    cancel_appointment,
+    reschedule_appointment,
+)
 from app.schemas.chat import ChatRequest
 
 router = APIRouter()
@@ -83,7 +87,55 @@ def chat(
                 "status": cancelled_appointment.status,
             },
         }
+    if session.get("intent") == "reschedule_appointment":
+       appointment_id = session.get("appointment_id")
+       date = session.get("date")
+       time = session.get("time")
 
+    missing_fields = []
+
+    if not appointment_id:
+        missing_fields.append("appointment_id")
+
+    if not date:
+        missing_fields.append("date")
+
+    if not time:
+        missing_fields.append("time")
+
+    if missing_fields:
+        return {
+            "status": "needs_information",
+            "missing_fields": missing_fields,
+            "message": f"Please provide: {', '.join(missing_fields)}",
+            "session": session,
+        }
+
+    updated_appointment = reschedule_appointment(
+        db,
+        int(appointment_id),
+        f"{date} {time}",
+    )
+
+    if not updated_appointment:
+        return {
+            "status": "error",
+            "message": "Appointment not found.",
+        }
+
+    clear_session(request.session_id)
+
+    return {
+        "status": "success",
+        "message": "Appointment rescheduled successfully",
+        "appointment_id": updated_appointment.id,
+        "appointment": {
+            "customer_name": updated_appointment.customer_name,
+            "phone_number": updated_appointment.phone_number,
+            "appointment_time": updated_appointment.appointment_time,
+            "status": updated_appointment.status,
+        },
+    }
     if session.get("intent") == "book_appointment":
         missing_fields = []
 
