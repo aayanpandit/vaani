@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.ai.agent import VaaniAgent
 from app.database.dependencies import get_db
 from app.schemas.appointment import AppointmentCreate
+from app.integrations.google_calendar import create_calendar_event
 
 from app.services.appointment_service import (
     create_appointment,
@@ -187,12 +188,18 @@ def chat(
 
         created_appointment = create_appointment(db, appointment)
 
+        calendar_event = create_calendar_event(
+    summary=f"Appointment with {created_appointment.customer_name}",
+    start_datetime="2026-07-01T17:00:00",
+                                          )
+
         clear_session(request.session_id)
 
         return {
             "status": "success",
             "message": "Appointment booked successfully",
             "appointment_id": created_appointment.id,
+            "calendar_event_link": calendar_event.get("htmlLink"),
             "appointment": {
                 "customer_name": created_appointment.customer_name,
                 "phone_number": created_appointment.phone_number,
