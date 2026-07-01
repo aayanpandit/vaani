@@ -7,7 +7,6 @@ from app.ai.llm_entity_extractor import extract_entities_with_llm
 class VaaniAgent:
 
     def process(self, message: str):
-
         intent = detect_intent_with_llm(message)
 
         try:
@@ -21,6 +20,13 @@ class VaaniAgent:
             **regex_entities,
             **llm_entities,
         }
+
+        # Ensure all expected fields always exist
+        entities.setdefault("date", None)
+        entities.setdefault("time", None)
+        entities.setdefault("appointment_id", None)
+        entities.setdefault("customer_name", None)
+        entities.setdefault("phone_number", None)
 
         tool = select_tool(intent)
 

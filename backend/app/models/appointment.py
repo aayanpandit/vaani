@@ -11,3 +11,5 @@ class Appointment(Base):
     phone_number = Column(String, nullable=False)
     appointment_time = Column(String, nullable=False)
     status = Column(String, default="scheduled")
+    calendar_event_id = Column(String, nullable=True)
+    

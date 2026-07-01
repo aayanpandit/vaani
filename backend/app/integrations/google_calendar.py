@@ -76,3 +76,53 @@ def create_calendar_event(
     ).execute()
 
     return created_event
+
+def delete_calendar_event(event_id: str):
+    service = get_calendar_service()
+
+    service.events().delete(
+        calendarId="primary",
+        eventId=event_id,
+    ).execute()
+
+    return True
+
+def update_calendar_event(
+    event_id: str,
+    start_datetime: str,
+    duration_minutes: int = 30,
+):
+    from datetime import timedelta
+    import dateparser
+
+    service = get_calendar_service()
+
+    start = dateparser.parse(start_datetime)
+
+    if not start:
+        raise ValueError(f"Could not parse datetime: {start_datetime}")
+
+    end = start + timedelta(minutes=duration_minutes)
+
+    event = service.events().get(
+        calendarId="primary",
+        eventId=event_id,
+    ).execute()
+
+    event["start"] = {
+        "dateTime": start.isoformat(),
+        "timeZone": "Asia/Kolkata",
+    }
+
+    event["end"] = {
+        "dateTime": end.isoformat(),
+        "timeZone": "Asia/Kolkata",
+    }
+
+    updated_event = service.events().update(
+        calendarId="primary",
+        eventId=event_id,
+        body=event,
+    ).execute()
+
+    return updated_event

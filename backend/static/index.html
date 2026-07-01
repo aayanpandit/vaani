@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vaani Voice Assistant</title>
+</head>
+<body>
+    <h2>Vaani AI Receptionist</h2>
+
+    <button id="recordBtn">🎙️ Start Recording</button>
+    <p id="status">Click mic to speak</p>
+
+    <h3>You said:</h3>
+    <p id="transcript"></p>
+
+    <h3>Vaani:</h3>
+    <p id="response"></p>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+
+        // Change this if old session memory causes issues
+        const sessionId = "browser_call_2";
+
+        const recordBtn = document.getElementById("recordBtn");
+        const statusText = document.getElementById("status");
+        const transcriptText = document.getElementById("transcript");
+        const responseText = document.getElementById("response");
+
+        recordBtn.onclick = async () => {
+            if (!isRecording) {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: true
+                });
+
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, {
+                        type: "audio/webm"
+                    });
+
+                    const formData = new FormData();
+                    formData.append("file", audioBlob, "voice.webm");
+
+                    statusText.innerText = "Processing...";
+
+                    const response = await fetch(
+                        `/api/v1/voice/chat?session_id=${sessionId}`,
+                        {
+                            method: "POST",
+                            body: formData
+                        }
+                    );
+
+                    const data = await response.json();
+
+                    const transcript = data.transcript || "";
+                    const reply = data.response?.message || "No response";
+
+                    transcriptText.innerText = transcript;
+                    responseText.innerText = reply;
+
+                    if (data.response?.audio_url) {
+                        const audio = new Audio(
+                            `http://127.0.0.1:8000${data.response.audio_url}`
+                        );
+
+                        await audio.play();
+                    }
+
+                    statusText.innerText = "Click mic to speak again";
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+
+                recordBtn.innerText = "⏹️ Stop Recording";
+                statusText.innerText = "Listening...";
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+
+                recordBtn.innerText = "🎙️ Start Recording";
+                statusText.innerText = "Recording stopped";
+            }
+        };
+    </script>
+</body>
+</html>

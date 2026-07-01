@@ -42,3 +42,17 @@ def reschedule_appointment(db, appointment_id: int, new_appointment_time: str):
     db.refresh(appointment)
 
     return appointment
+
+
+def update_calendar_event_id(db, appointment_id: int, calendar_event_id: str):
+    appointment = get_appointment(db, appointment_id)
+
+    if not appointment:
+        return None
+
+    appointment.calendar_event_id = calendar_event_id
+
+    db.commit()
+    db.refresh(appointment)
+
+    return appointment
