@@ -51,3 +51,15 @@ async def voice_chat(
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
+@router.get("/voice/greeting")
+async def voice_greeting():
+    from app.services.tts_service import generate_speech
+
+    message = "Hello, Vaani this side. How may I help you?"
+    audio_url = await generate_speech(message)
+
+    return {
+        "message": message,
+        "audio_url": audio_url,
+    }

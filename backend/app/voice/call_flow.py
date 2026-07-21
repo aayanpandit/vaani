@@ -19,7 +19,10 @@ from app.schemas.appointment import AppointmentCreate
 from app.services.appointment_service import (
     cancel_appointment,
     create_appointment,
-    get_appointment,
+    find_next_available_slots,
+    get_latest_appointment_by_phone,
+    is_slot_available,
+    normalize_appointment_slot,
     reschedule_appointment,
     update_calendar_event_id,
 )
@@ -49,9 +52,9 @@ class Stage(str, Enum):
 
 REQUIRED_FIELDS: Dict[Intent, list[str]] = {
     Intent.BOOK: ["date", "time", "customer_name", "phone_number"],
-    Intent.RESCHEDULE: ["appointment_id", "date", "time"],
-    Intent.CANCEL: ["appointment_id"],
-    Intent.LOOKUP: ["appointment_id"],
+    Intent.RESCHEDULE: ["phone_number", "date", "time"],
+    Intent.CANCEL: ["phone_number"],
+    Intent.LOOKUP: ["phone_number"],
 }
 
 FIELD_TO_STAGE: Dict[str, Stage] = {
@@ -312,6 +315,134 @@ def _extract_with_agent(message: str, session: Dict[str, Any]) -> Dict[str, Any]
 
     return extracted
 
+def _extract_natural_date(message: str) -> Optional[str]:
+    text = _clean_text(message)
+    lowered = text.lower()
+
+    relative_dates = (
+        "day after tomorrow",
+        "tomorrow",
+        "today",
+    )
+
+    for relative_date in relative_dates:
+        if relative_date in lowered:
+            return relative_date
+
+    # Matches:
+    # 21 July
+    # 21st July
+    # July 21
+    # July 21st
+    # 21 July 2026
+    month_names = (
+        "january|february|march|april|may|june|"
+        "july|august|september|october|november|december|"
+        "jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec"
+    )
+
+    date_patterns = [
+        rf"\b(\d{{1,2}}(?:st|nd|rd|th)?\s+(?:{month_names})(?:\s+\d{{4}})?)\b",
+        rf"\b((?:{month_names})\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,\s*|\s+)?(?:\d{{4}})?)\b",
+        r"\b(\d{4}-\d{2}-\d{2})\b",
+        r"\b(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b",
+    ]
+
+    for pattern in date_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+
+        if match:
+            return match.group(1).strip()
+
+    weekdays = (
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    )
+
+    for weekday in weekdays:
+        if f"next {weekday}" in lowered:
+            return f"next {weekday}"
+
+        if weekday in lowered:
+            return weekday
+
+    return None
+
+def _extract_spoken_phone_number(message: str) -> Optional[str]:
+    """Extract an Indian ten-digit mobile number from digits or spoken digits."""
+
+    text = _clean_text(message).lower()
+
+    digit_words = {
+        "zero": "0", "oh": "0", "o": "0",
+        "one": "1", "two": "2", "three": "3", "four": "4",
+        "five": "5", "six": "6", "seven": "7", "eight": "8",
+        "nine": "9",
+    }
+
+    # First try ordinary digits, allowing spaces, hyphens and country code.
+    compact = re.sub(r"[^0-9+]", "", text)
+    compact = re.sub(r"^\+?91", "", compact)
+    digit_match = re.search(r"([6-9]\d{9})", compact)
+    if digit_match:
+        return digit_match.group(1)
+
+    # Then convert spoken digits such as "nine eight seven...".
+    tokens = re.findall(r"[a-z]+|\d", text)
+    spoken_digits = "".join(
+        token if token.isdigit() else digit_words.get(token, "")
+        for token in tokens
+    )
+
+    if spoken_digits.startswith("91") and len(spoken_digits) >= 12:
+        spoken_digits = spoken_digits[2:]
+
+    spoken_match = re.search(r"([6-9]\d{9})", spoken_digits)
+    return spoken_match.group(1) if spoken_match else None
+
+
+def _extract_name_response(message: str) -> Optional[str]:
+    """Normalize a short name reply without accepting commands as names."""
+
+    original = _clean_text(message)
+    lowered = original.lower()
+
+    # Never treat appointment commands or refusals as a person's name.
+    blocked_words = {
+        "appointment", "book", "booking", "schedule", "reschedule",
+        "cancel", "lookup", "phone", "number", "date", "time",
+    }
+    words = set(re.findall(r"[a-z]+", lowered))
+    if words & blocked_words or _is_required_detail_refusal(original):
+        return None
+
+    text = re.sub(
+        r"^(?:it\s*['’]?s|its|i am|i['’]?m|my name is|this is|name is)\s+",
+        "",
+        original,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"[^A-Za-z\s'-]", "", text).strip()
+    text = re.sub(r"\s+", " ", text)
+
+    if not text:
+        return None
+
+    name_words = text.split()
+    if not 1 <= len(name_words) <= 4:
+        return None
+
+    # A valid name reply should contain letters only and should not be a sentence.
+    if any(word.lower() in blocked_words for word in name_words):
+        return None
+
+    return text.title()
+
 
 def _fallback_extract(message: str) -> Dict[str, Any]:
     """Deterministically extract simple appointment fields from user speech."""
@@ -346,10 +477,7 @@ def _fallback_extract(message: str) -> Dict[str, Any]:
     elif any(word in lowered for word in ("book", "schedule", "appointment")):
         result["intent"] = Intent.BOOK
 
-    compact_phone_text = re.sub(r"[\s\-()]", "", text)
-    phone_match = re.search(r"(?<!\d)([6-9]\d{9})(?!\d)", compact_phone_text)
-    if phone_match:
-        result["phone_number"] = phone_match.group(1)
+    result["phone_number"] = _extract_spoken_phone_number(message)
 
     appointment_patterns = [
         r"\b(?:appointment|booking)\s*(?:id|number|no\.?|#)?\s*(?:is|:)?\s*([A-Za-z]*[-_]?\d+)\b",
@@ -364,32 +492,38 @@ def _fallback_extract(message: str) -> Dict[str, Any]:
             result["appointment_id"] = int(raw_id) if raw_id.isdigit() else raw_id.upper()
             break
 
-    name_match = re.search(
-        r"(?:i am|i'm|my name is|this is)\s+([A-Za-z]+(?:\s+[A-Za-z]+){0,3}?)(?=\s+(?:and|i want|want|would|need|to book|to schedule)\b|[,.]|$)",
-        text,
-        re.IGNORECASE,
-    )
-    if name_match:
-        result["customer_name"] = name_match.group(1).strip().title()
+    result["customer_name"] = _extract_name_response(message)
 
-    if "day after tomorrow" in lowered:
-        result["date"] = "day after tomorrow"
-    elif "tomorrow" in lowered:
-        result["date"] = "tomorrow"
-    elif "today" in lowered:
-        result["date"] = "today"
-    else:
-        date_match = re.search(
-            r"\b(\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b",
-            text,
-        )
-        if date_match:
-            result["date"] = date_match.group(1)
+    result["date"] = _extract_natural_date(message)
 
     normalized_time_text = lowered.replace(".", "")
     normalized_time_text = re.sub(r"\s+", " ", normalized_time_text).strip()
 
-    word_numbers = {
+    normalized_time_text = re.sub(
+        r"\b([ap])\s+m\b",
+        r"\1m",
+        normalized_time_text,
+        flags=re.IGNORECASE,
+    )
+
+    minute_phrases = {
+        "forty five": "45",
+        "forty-five": "45",
+        "quarter past": "15",
+        "fifteen": "15",
+        "thirty": "30",
+        "forty": "40",
+    }
+
+    for phrase, number in minute_phrases.items():
+        normalized_time_text = re.sub(
+            rf"\b{re.escape(phrase)}\b",
+            number,
+            normalized_time_text,
+            flags=re.IGNORECASE,
+        )
+
+    hour_words = {
         "one": "1",
         "two": "2",
         "three": "3",
@@ -403,7 +537,8 @@ def _fallback_extract(message: str) -> Dict[str, Any]:
         "eleven": "11",
         "twelve": "12",
     }
-    for word, number in word_numbers.items():
+
+    for word, number in hour_words.items():
         normalized_time_text = re.sub(
             rf"\b{word}\b",
             number,
@@ -411,25 +546,39 @@ def _fallback_extract(message: str) -> Dict[str, Any]:
             flags=re.IGNORECASE,
         )
 
-    # Convert phrases such as "6 30 pm" produced by speech-to-text into "6:30 pm".
     normalized_time_text = re.sub(
-        r"\b(\d{1,2})\s+(\d{2})\s*(am|pm)\b",
+        r"\b(\d{1,2})\s+(15|30|45)\s*(am|pm)\b",
         r"\1:\2 \3",
         normalized_time_text,
         flags=re.IGNORECASE,
     )
 
+    normalized_time_text = re.sub(
+        r"\b(\d{1,2})\s+(15|30|45)\b",
+        r"\1:\2",
+        normalized_time_text,
+        flags=re.IGNORECASE,
+    )
+
     time_patterns = [
-        r"\b(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b",
-        r"\b(?:at|around|by)\s+(\d{1,2}(?::\d{2})?)\b",
-        r"^\s*(\d{1,2}(?::\d{2})?)\s*$",
+        r"\b(\d{1,2}:\d{2}\s*(?:am|pm))\b",
+        r"\b(\d{1,2}\s*(?:am|pm))\b",
+        r"\b(?:at|around|by)\s+(\d{1,2}:\d{2})\b",
+        r"^\s*(\d{1,2}:\d{2})\s*$",
+        r"^\s*(\d{1,2})\s*$",
     ]
+
     for pattern in time_patterns:
         time_match = re.search(pattern, normalized_time_text, re.IGNORECASE)
         if not time_match:
             continue
 
-        parsed_time = re.sub(r"\s+", " ", time_match.group(1).strip()).upper()
+        parsed_time = re.sub(
+            r"\s+",
+            " ",
+            time_match.group(1).strip(),
+        ).upper()
+
         hour_match = re.match(r"(\d{1,2})", parsed_time)
         if not hour_match:
             continue
@@ -439,7 +588,7 @@ def _fallback_extract(message: str) -> Dict[str, Any]:
         minute = int(minute_match.group(1)) if minute_match else 0
         has_meridiem = bool(re.search(r"\b(?:AM|PM)\b", parsed_time))
 
-        if minute > 59:
+        if minute not in {0, 15, 30, 45}:
             continue
         if has_meridiem and not 1 <= hour <= 12:
             continue
@@ -515,14 +664,14 @@ def _confirmation_message(session: Dict[str, Any]) -> str:
     if intent == Intent.RESCHEDULE:
         return (
             "Let me confirm. "
-            f"You want appointment {session.get('appointment_id')} moved to "
+            f"You want the appointment linked to {session.get('phone_number')} moved to "
             f"{session.get('date')} at {session.get('time')}. Should I reschedule it?"
         )
 
     if intent == Intent.CANCEL:
         return (
-            f"Let me confirm. Should I cancel appointment "
-            f"{session.get('appointment_id')}?"
+            "Let me confirm. Should I cancel the active appointment linked to "
+            f"{session.get('phone_number')}?"
         )
 
     return "Should I proceed?"
@@ -556,6 +705,90 @@ def _call_flexibly(func: Any, *args: Any, **kwargs: Any) -> Any:
         return func(*args, **accepted)
 
 
+def _validate_requested_slot(
+    session_id: str,
+    session: Dict[str, Any],
+    db: Session,
+    *,
+    exclude_appointment_id: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    """Normalize, validate, and check availability of the requested slot."""
+
+    appointment_date = session.get("date")
+    appointment_time = session.get("time")
+
+    try:
+        normalized_date, normalized_time, _ = normalize_appointment_slot(
+            appointment_date,
+            appointment_time,
+        )
+    except ValueError as exc:
+        _save(
+            session_id,
+            time=None,
+            stage=Stage.COLLECT_TIME,
+        )
+        return _response(
+            session_id,
+            str(exc),
+            status="invalid_slot",
+            end_call=False,
+        )
+
+    _save(
+        session_id,
+        date=normalized_date,
+        time=normalized_time,
+    )
+
+    if is_slot_available(
+        db,
+        normalized_date,
+        normalized_time,
+        exclude_appointment_id=exclude_appointment_id,
+    ):
+        return None
+
+    suggestions = find_next_available_slots(
+        db,
+        normalized_date,
+        normalized_time,
+        exclude_appointment_id=exclude_appointment_id,
+        number_of_slots=3,
+    )
+
+    suggestion_text = ", ".join(
+        suggestion["display"]
+        for suggestion in suggestions
+    )
+
+    _save(
+        session_id,
+        time=None,
+        stage=Stage.COLLECT_TIME,
+    )
+
+    if suggestion_text:
+        message = (
+            "That slot is already booked. "
+            f"The next available options are {suggestion_text}. "
+            "What time would you prefer?"
+        )
+    else:
+        message = (
+            "That slot is already booked. "
+            "Please tell me another preferred time."
+        )
+
+    return _response(
+        session_id,
+        message,
+        status="slot_unavailable",
+        end_call=False,
+        suggested_slots=suggestions,
+    )
+
+
 def _build_appointment_payload(session: Dict[str, Any]) -> AppointmentCreate:
     """Build AppointmentCreate using the field names defined by the actual schema."""
 
@@ -584,9 +817,37 @@ def _build_appointment_payload(session: Dict[str, Any]) -> AppointmentCreate:
     elif "time" in field_names:
         payload["time"] = session["time"]
 
+    if "status" in field_names:
+        payload["status"] = "confirmed"
+
     return AppointmentCreate(**payload)
 
 def _execute_booking(session_id: str, session: Dict[str, Any], db: Session) -> Dict[str, Any]:
+    missing = _missing_field(session)
+    if missing:
+        stage = FIELD_TO_STAGE[missing]
+        _save(session_id, stage=stage)
+        return _response(
+            session_id,
+            (
+                f"I cannot confirm this appointment because the required "
+                f"{_required_field_label(stage)} is missing. The request is on hold "
+                "due to insufficient information."
+            ),
+            status="on_hold",
+            end_call=True,
+            appointment_id=None,
+        )
+
+    slot_error = _validate_requested_slot(
+        session_id,
+        session,
+        db,
+    )
+    if slot_error:
+        return slot_error
+
+    session = _safe_session(session_id)
     appointment_data = _build_appointment_payload(session)
     appointment = create_appointment(db, appointment_data)
 
@@ -641,21 +902,19 @@ def _execute_booking(session_id: str, session: Dict[str, Any], db: Session) -> D
     )
 
 
+def _find_appointment_for_phone(db: Session, phone_number: str):
+    return get_latest_appointment_by_phone(db, phone_number)
+
+
 def _execute_lookup(session_id: str, session: Dict[str, Any], db: Session) -> Dict[str, Any]:
-    appointment_id = session["appointment_id"]
-    appointment = _call_flexibly(
-        get_appointment,
-        db,
-        appointment_id,
-        appointment_id=appointment_id,
-        id=appointment_id,
-    )
+    phone_number = session["phone_number"]
+    appointment = _find_appointment_for_phone(db, phone_number)
 
     if not appointment:
         _save(session_id, stage=Stage.END)
         return _response(
             session_id,
-            "I couldn't find an appointment with that ID. Please check the ID and try again.",
+            "I couldn't find an active appointment linked to that phone number.",
             status="not_found",
             end_call=True,
         )
@@ -679,24 +938,21 @@ def _execute_lookup(session_id: str, session: Dict[str, Any], db: Session) -> Di
 
 
 def _execute_cancellation(session_id: str, session: Dict[str, Any], db: Session) -> Dict[str, Any]:
-    appointment_id = session["appointment_id"]
-    appointment = _call_flexibly(
-        get_appointment,
-        db,
-        appointment_id,
-        appointment_id=appointment_id,
-        id=appointment_id,
-    )
+    phone_number = session["phone_number"]
+    appointment = _find_appointment_for_phone(db, phone_number)
+
     if not appointment:
         _save(session_id, stage=Stage.END)
         return _response(
             session_id,
-            "I couldn't find an appointment with that ID.",
+            "I couldn't find an active appointment linked to that phone number.",
             status="not_found",
             end_call=True,
         )
 
+    appointment_id = _result_value(appointment, "id", "appointment_id")
     calendar_event_id = _result_value(appointment, "calendar_event_id", "event_id")
+
     if calendar_event_id:
         try:
             _call_flexibly(
@@ -708,13 +964,7 @@ def _execute_cancellation(session_id: str, session: Dict[str, Any], db: Session)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Calendar deletion failed: %s", exc)
 
-    _call_flexibly(
-        cancel_appointment,
-        db,
-        appointment_id,
-        appointment_id=appointment_id,
-        id=appointment_id,
-    )
+    cancel_appointment(db, appointment_id)
 
     _save(session_id, stage=Stage.END)
     return _response(
@@ -727,38 +977,40 @@ def _execute_cancellation(session_id: str, session: Dict[str, Any], db: Session)
 
 
 def _execute_reschedule(session_id: str, session: Dict[str, Any], db: Session) -> Dict[str, Any]:
-    appointment_id = session["appointment_id"]
-    appointment = _call_flexibly(
-        get_appointment,
-        db,
-        appointment_id,
-        appointment_id=appointment_id,
-        id=appointment_id,
-    )
+    phone_number = session["phone_number"]
+    appointment = _find_appointment_for_phone(db, phone_number)
+
     if not appointment:
         _save(session_id, stage=Stage.END)
         return _response(
             session_id,
-            "I couldn't find an appointment with that ID.",
+            "I couldn't find an active appointment linked to that phone number.",
             status="not_found",
             end_call=True,
         )
 
-    updated = _call_flexibly(
-        reschedule_appointment,
+    appointment_id = _result_value(appointment, "id", "appointment_id")
+
+    slot_error = _validate_requested_slot(
+        session_id,
+        session,
+        db,
+        exclude_appointment_id=appointment_id,
+    )
+    if slot_error:
+        return slot_error
+
+    session = _safe_session(session_id)
+    updated = reschedule_appointment(
         db,
         appointment_id,
-        session["date"],
-        session["time"],
-        appointment_id=appointment_id,
         new_date=session["date"],
         new_time=session["time"],
-        date=session["date"],
-        time=session["time"],
     )
 
     calendar_event_id = _result_value(appointment, "calendar_event_id", "event_id")
     calendar_event_link = None
+
     if calendar_event_id:
         try:
             calendar_result = _call_flexibly(
@@ -870,6 +1122,154 @@ def _apply_requested_change(session_id: str, message: str) -> Dict[str, Any]:
         "Please tell me what you want to change: the date, time, name, phone number, or appointment ID.",
     )
 
+def _detect_direct_intent(message: str) -> Optional[Intent]:
+    """Detect appointment intent reliably from natural speech."""
+
+    lowered = _clean_text(message).lower()
+    words = set(re.findall(r"[a-z]+", lowered))
+
+    # Check specific actions first.
+    if (
+        "cancel" in words
+        or "cancellation" in words
+        or "delete" in words
+    ):
+        return Intent.CANCEL
+
+    if (
+        "reschedule" in words
+        or "postpone" in words
+        or (
+            ("change" in words or "move" in words)
+            and "appointment" in words
+        )
+    ):
+        return Intent.RESCHEDULE
+
+    if (
+        "lookup" in words
+        or (
+            {"check", "appointment"}.issubset(words)
+        )
+        or (
+            {"find", "appointment"}.issubset(words)
+        )
+        or (
+            {"appointment", "status"}.issubset(words)
+        )
+    ):
+        return Intent.LOOKUP
+
+    # Accept many variations:
+    # "book appointment"
+    # "I want to book an appointment"
+    # "I want book appointment"
+    # "schedule one for me"
+    if (
+        "book" in words
+        or "booking" in words
+        or "schedule" in words
+    ):
+        return Intent.BOOK
+
+    return None
+
+def _is_required_detail_refusal(message: str) -> bool:
+    """Detect a refusal even when speech-to-text adds extra filler words."""
+
+    lowered = _clean_text(message).lower()
+    normalized = re.sub(r"[^a-z0-9']+", " ", lowered).strip()
+    tokens = set(re.findall(r"[a-z']+", normalized))
+
+    exact_refusals = {
+        "no",
+        "nope",
+        "nah",
+        "no thanks",
+        "no thank you",
+        "skip it",
+        "skip this",
+        "leave it",
+        "prefer not to say",
+        "prefer not to share",
+    }
+
+    refusal_phrases = (
+        "don't want",
+        "dont want",
+        "do not want",
+        "won't give",
+        "wont give",
+        "will not give",
+        "won't share",
+        "wont share",
+        "will not share",
+        "not comfortable",
+        "not giving",
+        "cannot share",
+        "can't share",
+        "cant share",
+        "cannot give",
+        "can't give",
+        "cant give",
+        "i refuse",
+        "i said no",
+    )
+
+    # A short response beginning with no/nope/nah is a refusal. Longer replies
+    # such as "no, tomorrow" are not treated as refusals because they contain
+    # an actionable replacement value.
+    starts_with_no = bool(re.match(r"^(no|nope|nah)\b", normalized))
+    short_negative = starts_with_no and len(normalized.split()) <= 5
+
+    return (
+        normalized in exact_refusals
+        or short_negative
+        or bool(tokens & {"refuse"})
+        or any(phrase in normalized for phrase in refusal_phrases)
+    )
+
+
+def _requests_same_value(message: str, field: str) -> bool:
+    """Return True for replies like 'same time' or 'keep the same date'."""
+
+    normalized = re.sub(
+        r"[^a-z0-9']+",
+        " ",
+        _clean_text(message).lower(),
+    ).strip()
+
+    same_markers = (
+        "same",
+        "keep it",
+        "keep the",
+        "do not change",
+        "don't change",
+        "dont change",
+        "unchanged",
+        "as it is",
+        "current",
+        "existing",
+    )
+
+    if not any(marker in normalized for marker in same_markers):
+        return False
+
+    # At a date/time collection stage, a plain "same" is unambiguous.
+    return field in {"date", "time"}
+
+
+def _required_field_label(stage: Stage) -> str:
+    labels = {
+        Stage.COLLECT_DATE: "appointment date",
+        Stage.COLLECT_TIME: "appointment time",
+        Stage.COLLECT_NAME: "full name",
+        Stage.COLLECT_PHONE: "phone number",
+        Stage.COLLECT_APPOINTMENT_ID: "appointment ID",
+    }
+
+    return labels.get(stage, "required information")
+
 
 def handle_call(message: str, session_id: str, db: Session) -> Dict[str, Any]:
     """Public entry point used by the voice/chat routes."""
@@ -879,34 +1279,76 @@ def handle_call(message: str, session_id: str, db: Session) -> Dict[str, Any]:
     stage = _normalize_stage(session.get("stage"))
 
     if not message:
-        return _response(session_id, "I didn't catch that. Could you please repeat it?")
+        return _response(
+            session_id,
+            "I didn't catch that. Could you please repeat it?",
+        )
 
-    # First turn: greet only when the caller said nothing except a greeting.
+    # On the first turn, greet only when the caller said a pure greeting.
+    # Otherwise process the actionable first message immediately.
     if stage == Stage.GREETING:
         if _is_pure_greeting(message):
             _save(session_id, stage=Stage.COLLECT_INTENT)
-            return _response(session_id, "Hello, Vaani this side. How may I help you?")
+            return _response(
+                session_id,
+                "Hello, Vaani this side. How may I help you?",
+            )
+
         _save(session_id, stage=Stage.COLLECT_INTENT)
         session = _safe_session(session_id)
         stage = Stage.COLLECT_INTENT
 
-    # Confirmation is handled before NLU so a plain "yes" cannot lose intent.
+    # Handle final confirmation before NLU so a plain yes/no is not lost.
     if stage == Stage.CONFIRM_FINAL:
         if session.get("awaiting_change"):
             return _apply_requested_change(session_id, message)
 
         decision = _classify_yes_no(message)
+
         if decision is True:
             _save(session_id, stage=Stage.EXECUTE)
             return _execute_action(session_id, db)
+
         if decision is False:
             _save(session_id, awaiting_change=True)
-            return _response(session_id, "No problem. What would you like to change?")
-        return _response(session_id, "Please say yes to proceed or no to make a change.")
+            return _response(
+                session_id,
+                "No problem. What would you like to change?",
+            )
+
+        return _response(
+            session_id,
+            "Please say yes to proceed or no to make a change.",
+        )
+
+    # A clear appointment command must never be consumed as a name, phone
+    # number, date, or time. If the caller restarts with a command while the
+    # session is collecting another field, begin that transaction cleanly.
+    global_direct_intent = _detect_direct_intent(message)
+    if global_direct_intent is not None and stage not in {
+        Stage.CONFIRM_FINAL,
+        Stage.EXECUTE,
+        Stage.END,
+    }:
+        clear_session(session_id)
+        session = _save(
+            session_id,
+            stage=Stage.COLLECT_INTENT,
+            intent=global_direct_intent,
+        )
+        stage = Stage.COLLECT_INTENT
 
     if stage == Stage.END:
         lowered = message.lower()
-        if lowered in {"no", "no thanks", "nothing", "that's all", "bye", "goodbye"}:
+
+        if lowered in {
+            "no",
+            "no thanks",
+            "nothing",
+            "that's all",
+            "bye",
+            "goodbye",
+        }:
             clear_session(session_id)
             return {
                 "status": "success",
@@ -919,10 +1361,39 @@ def handle_call(message: str, session_id: str, db: Session) -> Dict[str, Any]:
         clear_session(session_id)
         _save(session_id, stage=Stage.COLLECT_INTENT)
         session = _safe_session(session_id)
+        stage = Stage.COLLECT_INTENT
 
-    # During slot collection, prefer deterministic extraction for the field
-    # Vaani explicitly requested. This prevents repeated prompt loops when the
-    # LLM misses a short reply such as "6 PM" or a ten-digit phone number.
+    required_field_stages = {
+        Stage.COLLECT_DATE,
+        Stage.COLLECT_TIME,
+        Stage.COLLECT_NAME,
+        Stage.COLLECT_PHONE,
+        Stage.COLLECT_APPOINTMENT_ID,
+    }
+
+    # Do not create or confirm an appointment when required information is refused.
+    # Keep the request on hold and end the voice call cleanly.
+    if (
+        stage in required_field_stages
+        and _is_required_detail_refusal(message)
+    ):
+        field_label = _required_field_label(stage)
+        session = _save(session_id, stage=stage)
+
+        return {
+            "status": "on_hold",
+            "end_call": True,
+            "appointment_id": None,
+            "message": (
+                f"I understand. Without your {field_label}, I cannot complete or confirm "
+                "the appointment request. I have kept this request on hold due to "
+                "insufficient information."
+            ),
+            "session": session,
+        }
+
+    # During slot collection, prioritize deterministic extraction for the
+    # specific field Vaani asked for.
     stage_field = {
         Stage.COLLECT_DATE: "date",
         Stage.COLLECT_TIME: "time",
@@ -931,43 +1402,138 @@ def handle_call(message: str, session_id: str, db: Session) -> Dict[str, Any]:
         Stage.COLLECT_APPOINTMENT_ID: "appointment_id",
     }.get(stage)
 
-    if stage_field:
-        fallback = _fallback_extract(message)
-        stage_value = fallback.get(stage_field)
 
-        # A name-only reply such as "Ayan Pandit" does not contain an
-        # introductory phrase, so accept normal alphabetic text at this stage.
-        if stage_field == "customer_name" and not stage_value:
-            possible_name = re.sub(r"[^A-Za-z\s'-]", "", message).strip()
-            if 1 <= len(possible_name.split()) <= 4 and possible_name:
-                stage_value = possible_name.title()
+    if stage_field:
+        intent = _normalize_intent(session.get("intent"))
+
+        # During rescheduling, "same date" or "same time" means reuse the
+        # corresponding value from the existing appointment linked by phone.
+        if (
+            intent == Intent.RESCHEDULE
+            and stage_field in {"date", "time"}
+            and _requests_same_value(message, stage_field)
+        ):
+            phone_number = session.get("phone_number")
+            existing = (
+                _find_appointment_for_phone(db, phone_number)
+                if phone_number
+                else None
+            )
+
+            if not existing:
+                return _response(
+                    session_id,
+                    "I couldn't find an active appointment linked to that phone number.",
+                    status="not_found",
+                    end_call=True,
+                )
+
+            if stage_field == "date":
+                stage_value = _result_value(existing, "appointment_date", "date")
+            else:
+                stage_value = _result_value(existing, "appointment_time", "time")
+        else:
+            fallback = _fallback_extract(message)
+            stage_value = fallback.get(stage_field)
+
+        # Normalize replies such as "It's Aayan Pandit" to "Aayan Pandit".
+        if stage_field == "customer_name":
+            # Appointment commands such as "book an appointment" are actions,
+            # never customer names.
+            if _detect_direct_intent(message) is not None:
+                stage_value = None
+            else:
+                stage_value = _extract_name_response(message)
 
         if stage_value not in (None, ""):
-            session = _save(session_id, **{stage_field: stage_value})
+            session = _save(
+                session_id,
+                **{stage_field: stage_value},
+            )
         else:
-            entities = _extract_with_agent(message, session)
-            session = _merge_entities(session_id, session, entities)
+            # Never let the LLM invent a name or phone number from unrelated speech.
+            # Ask for the same field again unless the caller explicitly refused it.
+            return _response(
+                session_id,
+                _prompt_for_stage(stage, _normalize_intent(session.get("intent"))),
+            )
     else:
+        # Explicit phrases such as "book an appointment" should take
+        # priority over the agent's intent extraction.
+        direct_intent = _detect_direct_intent(message)
+
+        if direct_intent is not None:
+            session = _save(
+                session_id,
+                intent=direct_intent,
+            )
+
         entities = _extract_with_agent(message, session)
-        session = _merge_entities(session_id, session, entities)
+        session = _merge_entities(
+            session_id,
+            session,
+            entities,
+        )
 
     intent = _normalize_intent(session.get("intent"))
+
     if intent is None:
         _save(session_id, stage=Stage.COLLECT_INTENT)
         return _response(
             session_id,
-            "I can help you book, reschedule, cancel, or look up an appointment. What would you like to do?",
+            (
+                "I can help you book, reschedule, cancel, or look up "
+                "an appointment. What would you like to do?"
+            ),
         )
 
     missing = _missing_field(session)
+
     if missing:
         next_stage = FIELD_TO_STAGE[missing]
         _save(session_id, stage=next_stage)
-        return _response(session_id, _prompt_for_stage(next_stage, intent))
+        return _response(
+            session_id,
+            _prompt_for_stage(next_stage, intent),
+        )
 
     if intent == Intent.LOOKUP:
         _save(session_id, stage=Stage.EXECUTE)
         return _execute_action(session_id, db)
 
-    _save(session_id, stage=Stage.CONFIRM_FINAL, awaiting_change=False)
-    return _response(session_id, _confirmation_message(_safe_session(session_id)))
+    if intent in {Intent.BOOK, Intent.RESCHEDULE}:
+        exclude_appointment_id = None
+
+        if intent == Intent.RESCHEDULE:
+            existing = _find_appointment_for_phone(
+                db,
+                session.get("phone_number"),
+            )
+            if existing:
+                exclude_appointment_id = _result_value(
+                    existing,
+                    "id",
+                    "appointment_id",
+                )
+
+        slot_error = _validate_requested_slot(
+            session_id,
+            session,
+            db,
+            exclude_appointment_id=exclude_appointment_id,
+        )
+        if slot_error:
+            return slot_error
+
+        session = _safe_session(session_id)
+
+    _save(
+        session_id,
+        stage=Stage.CONFIRM_FINAL,
+        awaiting_change=False,
+    )
+
+    return _response(
+        session_id,
+        _confirmation_message(_safe_session(session_id)),
+    )

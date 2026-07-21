@@ -1,0 +1,26 @@
+/* Add to the bottom of App.css */
+.admin-login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.15), transparent 32%), #f5f7fb;
+}
+.admin-login-card {
+  width: min(460px, 100%);
+  padding: 30px;
+  border: 1px solid #e2e7f0;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(23, 32, 51, 0.14);
+}
+.admin-login-brand { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 26px; }
+.admin-login-logo { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; background: #eef0ff; color: #4f46e5; }
+.admin-login-brand h1 { margin: 4px 0 7px; }
+.admin-login-brand p { margin: 0; color: #6f798b; }
+.admin-login-field { display: grid; gap: 8px; margin-bottom: 16px; color: #475267; font-weight: 700; }
+.admin-login-field > div { display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid #dfe4ed; border-radius: 12px; }
+.admin-login-field input { width: 100%; border: 0; outline: 0; padding: 12px 0; background: transparent; font: inherit; }
+.admin-login-submit { width: 100%; min-height: 46px; }
+.admin-edit-reason { grid-column: 1 / -1; }
+.admin-edit-reason textarea { min-height: 100px; resize: vertical; border: 1px solid #dfe4ed; border-radius: 11px; padding: 11px 12px; font: inherit; }

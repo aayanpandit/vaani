@@ -1,0 +1,427 @@
+
+/* Add to the bottom of App.css */
+
+.bank-nav a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 45px;
+  padding: 0 13px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #b8c7d8;
+  text-decoration: none;
+  transition: 0.18s ease;
+}
+
+.bank-nav a:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+.bank-nav a.active {
+  border-color: rgba(118, 166, 218, 0.25);
+  background: #163c67;
+  color: #fff;
+  box-shadow: inset 3px 0 0 #67a8e8;
+}
+
+.bank-notification-wrapper {
+  position: relative;
+}
+
+.bank-notification-panel {
+  position: absolute;
+  top: 50px;
+  right: 0;
+  z-index: 80;
+  width: min(390px, calc(100vw - 30px));
+  overflow: hidden;
+  border: 1px solid #cfd8e2;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 20px 55px rgba(12, 36, 62, 0.18);
+}
+
+.bank-notification-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 15px 16px;
+  border-bottom: 1px solid #e3e8ee;
+  background: #f8fafc;
+}
+
+.bank-notification-header strong,
+.bank-notification-header span {
+  display: block;
+}
+
+.bank-notification-header strong {
+  color: #17304e;
+}
+
+.bank-notification-header span {
+  margin-top: 3px;
+  color: #7c8998;
+  font-size: 0.7rem;
+}
+
+.bank-notification-header button {
+  border: 0;
+  background: transparent;
+  color: #68788b;
+  cursor: pointer;
+}
+
+.bank-notification-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 15px;
+  border: 0;
+  border-bottom: 1px solid #edf0f3;
+  background: #fff;
+  color: #2b4058;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bank-notification-item:hover {
+  background: #f7f9fb;
+}
+
+.bank-notification-item strong,
+.bank-notification-item span {
+  display: block;
+}
+
+.bank-notification-item strong {
+  font-size: 0.76rem;
+}
+
+.bank-notification-item span {
+  margin-top: 4px;
+  color: #7b8796;
+  font-size: 0.68rem;
+}
+
+.bank-notification-dot-icon {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #d9912f;
+  box-shadow: 0 0 0 4px rgba(217, 145, 47, 0.13);
+}
+
+.bank-notification-empty {
+  padding: 26px 18px;
+  color: #7d8997;
+  text-align: center;
+  font-size: 0.78rem;
+}
+
+.bank-notification-footer {
+  width: 100%;
+  padding: 11px 14px;
+  border: 0;
+  background: #f4f7fa;
+  color: #1c5688;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.bank-page-heading {
+  margin-bottom: 22px;
+}
+
+.bank-page-heading h1 {
+  margin: 0;
+  color: #102844;
+  font-size: 2rem;
+}
+
+.bank-page-heading p:last-child {
+  margin: 8px 0 0;
+  color: #738093;
+}
+
+.bank-dashboard-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.bank-dashboard-action-grid > button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 86px;
+  padding: 17px;
+  border: 1px solid #d6dee7;
+  border-radius: 9px;
+  background: #fff;
+  color: #24415f;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bank-dashboard-action-grid strong,
+.bank-dashboard-action-grid span {
+  display: block;
+}
+
+.bank-dashboard-action-grid span {
+  margin-top: 4px;
+  color: #7d8997;
+  font-size: 0.72rem;
+}
+
+.bank-table-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bank-table-controls select {
+  min-height: 39px;
+  padding: 0 11px;
+  border: 1px solid #cfd8e2;
+  border-radius: 7px;
+  background: #fff;
+  color: #344b64;
+}
+
+.bank-customer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px;
+}
+
+.bank-customer-grid > button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #dce3ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #2b425d;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bank-customer-grid > button:hover {
+  border-color: #1c5a91;
+  background: #f8fafc;
+}
+
+.bank-customer-grid-icon,
+.bank-activity-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: #edf3f8;
+  color: #1b588e;
+}
+
+.bank-customer-grid strong,
+.bank-customer-grid span,
+.bank-customer-grid small {
+  display: block;
+}
+
+.bank-customer-grid span {
+  margin-top: 3px;
+  color: #6f7e90;
+  font-size: 0.74rem;
+}
+
+.bank-customer-grid small {
+  margin-top: 5px;
+  color: #8b96a4;
+}
+
+.bank-activity-list > button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 17px;
+  border: 0;
+  border-bottom: 1px solid #edf0f3;
+  background: #fff;
+  color: #2c435e;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bank-activity-list > button:hover {
+  background: #f8fafc;
+}
+
+.bank-activity-list strong,
+.bank-activity-list span {
+  display: block;
+}
+
+.bank-activity-list span {
+  margin-top: 4px;
+  color: #7c8997;
+  font-size: 0.7rem;
+}
+
+.bank-activity-list time {
+  color: #7c8997;
+  font-size: 0.68rem;
+}
+
+.bank-profile-page-grid {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 18px;
+}
+
+.bank-profile-page-card,
+.bank-profile-details-card {
+  border: 1px solid #d6dee7;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(18, 43, 73, 0.05);
+}
+
+.bank-profile-page-card {
+  padding: 28px;
+  text-align: center;
+}
+
+.bank-profile-page-avatar {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 15px;
+  border-radius: 50%;
+  background: #173e68;
+  color: #fff;
+}
+
+.bank-profile-page-card h2 {
+  margin: 0;
+  color: #17304e;
+}
+
+.bank-profile-page-card p {
+  margin: 8px 0 15px;
+  color: #7a8797;
+}
+
+.bank-profile-page-card > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: #edf5f0;
+  color: #28734d;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.bank-profile-details-card {
+  padding: 24px;
+}
+
+.bank-profile-details-card h2 {
+  margin-top: 0;
+  color: #18314f;
+}
+
+.bank-profile-details-card dl {
+  margin: 0;
+}
+
+.bank-profile-details-card dl > div {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 18px;
+  padding: 14px 0;
+  border-bottom: 1px solid #edf0f3;
+}
+
+.bank-profile-details-card dt {
+  color: #788596;
+  font-size: 0.75rem;
+}
+
+.bank-profile-details-card dd {
+  margin: 0;
+  color: #263d57;
+  font-weight: 750;
+}
+
+.bank-profile-logout-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  padding: 10px 14px;
+  border: 1px solid #e1bcbc;
+  border-radius: 7px;
+  background: #fff6f6;
+  color: #af3636;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .bank-customer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bank-profile-page-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 650px) {
+  .bank-dashboard-action-grid,
+  .bank-customer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bank-table-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .bank-table-controls select,
+  .bank-table-controls .bank-search-box {
+    width: 100%;
+  }
+
+  .bank-activity-list > button {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .bank-activity-list time {
+    grid-column: 2;
+  }
+
+  .bank-profile-details-card dl > div {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+}
